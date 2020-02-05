@@ -54,8 +54,8 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-       - name: Costom configure file
-         run: |
+      - name: Costom configure file
+        run: |
           rm -f ./.config*
           touch ./.config
           #
