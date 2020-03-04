@@ -8,6 +8,7 @@ local fs = require "nixio.fs"
 local sys = require "luci.sys"
 local sid = arg[1]
 local uuid = luci.sys.exec("cat /proc/sys/kernel/random/uuid")
+local http  = require "luci.http"
 
 local function isKcptun(file)
 	if not fs.access(file, "rwx", "rx", "rx") then
@@ -130,6 +131,9 @@ end
 if nixio.fs.access("/usr/sbin/trojan") then
 o:value("trojan", translate("Trojan"))
 end
+if nixio.fs.access("/usr/bin/ipt2socks") then
+o:value("socks5", translate("Socks5"))
+end
 o.description = translate("Using incorrect encryption mothod may causes service fail to start")
 
 o = s:option(Value, "alias", translate("Alias(optional)"))
@@ -147,12 +151,17 @@ o.rmempty = false
 -- o.default = 60
 -- o.rmempty = false
 
+o = s:option(Value, "username", translate("Username"))
+o.rmempty = true
+o:depends("type", "socks5")
+
 o = s:option(Value, "password", translate("Password"))
 o.password = true
 o.rmempty = true
 o:depends("type", "ssr")
 o:depends("type", "ss")
 o:depends("type", "trojan")
+o:depends("type", "socks5")
 
 o = s:option(ListValue, "encrypt_method", translate("Encrypt Method"))
 for _, v in ipairs(encrypt_methods) do o:value(v) end
@@ -161,6 +170,15 @@ o:depends("type", "ssr")
 
 o = s:option(ListValue, "encrypt_method_ss", translate("Encrypt Method"))
 for _, v in ipairs(encrypt_methods_ss) do o:value(v) end
+o.rmempty = true
+o:depends("type", "ss")
+
+-- Shadowsocks Plugin
+o = s:option(Value, "plugin", translate("Plugin"))
+o.rmempty = true
+o:depends("type", "ss")
+
+o = s:option(Value, "plugin_opts", translate("Plugin Opts"))
 o.rmempty = true
 o:depends("type", "ss")
 
@@ -332,6 +350,7 @@ o = s:option(Flag, "insecure", translate("allowInsecure"))
 o.rmempty = true
 o:depends("type", "v2ray")
 o:depends("type", "trojan")
+o.default = "1"
 
 -- [[ TLS ]]--
 o = s:option(Flag, "tls", translate("TLS"))
@@ -350,7 +369,6 @@ o = s:option(Flag, "mux", translate("Mux"))
 o.rmempty = true
 o.default = "0"
 o:depends("type", "v2ray")
-o:depends("type", "trojan")
 
 o = s:option(Value, "concurrency", translate("Concurrency"))
 o.datatype = "uinteger"
@@ -358,11 +376,60 @@ o.rmempty = true
 o.default = "8"
 o:depends("mux", "1")
 
+-- [[ Cert ]]--
+o = s:option(Flag, "certificate", translate("Self-signed Certificate"))
+o.rmempty = true
+o.default = "0"
+o:depends("type", "trojan")
+o:depends("type", "v2ray")
+o.description = translate("If you have a self-signed certificate,please check the box")
+
+o = s:option(DummyValue, "upload", translate("Upload"))
+o.template = "shadowsocksr/certupload"
+o:depends("certificate", 1)
+
+cert_dir = "/etc/ssl/private/"
+local path
+
+http.setfilehandler(
+    function(meta, chunk, eof)
+      if not fd then
+        if (not meta) or (not meta.name) or (not meta.file) then return end
+           fd = nixio.open(cert_dir .. meta.file, "w")
+        if not fd then
+           path = translate("Create upload file error.")
+        return
+        end
+     end
+     if chunk and fd then
+     fd:write(chunk)
+     end
+     if eof and fd then
+       fd:close()
+       fd = nil
+       path = '/etc/ssl/private/' .. meta.file .. ''
+    end
+    end
+    )
+if luci.http.formvalue("upload") then
+   local f = luci.http.formvalue("ulfile")
+    if #f <= 0 then
+        path = translate("No specify upload file.")
+   end   
+end
+
+o = s:option(Value, "certpath", translate("Current Certificate Path"))
+o:depends("certificate", 1)
+o:value("/etc/ssl/private/")
+o.description = translate("Please confirm the current certificate path")
+o.default = "/etc/ssl/private/"
+
 o = s:option(Flag, "fast_open", translate("TCP Fast Open"))
 o.rmempty = true
 o.default = "0"
 o:depends("type", "ssr")
 o:depends("type", "ss")
+o:depends("type", "trojan")
 
 o = s:option(Flag, "switch_enable", translate("Enable Auto Switch"))
 o.rmempty = false
